@@ -1,0 +1,195 @@
+---
+title: "Tecniche di Campionamento: Random Sampling e Stratified Sampling"
+author: "Giovanni Del Piano"
+date: "6 Aprile 2025"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+```
+
+# Introduzione
+
+In questo documento esploreremo due importanti tecniche di campionamento utilizzate nell'analisi dei dati:
+
+1. **Simple Random Sampling** (Campionamento Casuale Semplice)
+2. **Stratified Random Sampling** (Campionamento Stratificato)
+
+Entrambe le tecniche sono fondamentali per estrarre campioni rappresentativi da popolazioni più ampie e costituiscono la base per molte analisi statistiche.
+
+# Teoria del Campionamento
+
+## Cos'è il Campionamento?
+
+Il campionamento è il processo di selezione di un sottoinsieme di individui da una popolazione per stimare le caratteristiche dell'intera popolazione. Le tecniche di campionamento sono essenziali quando:
+
+- Studiare l'intera popolazione è troppo costoso o richiede troppo tempo
+- La popolazione è troppo grande per essere analizzata interamente
+- Si vogliono ottenere risultati preliminari rapidamente
+
+## Simple Random Sampling
+
+Nel campionamento casuale semplice, ogni unità nella popolazione ha la stessa probabilità di essere selezionata. Questo metodo:
+
+- È il tipo più diretto di campionamento probabilistico
+- Garantisce che ogni elemento della popolazione abbia la stessa probabilità di essere incluso nel campione
+- Elimina il bias di selezione
+- Fornisce una base per calcolare l'errore di campionamento
+
+**Vantaggi**:
+- Facile da implementare
+- Richiede conoscenze minime sulla popolazione
+- Fornisce una buona rappresentazione quando la popolazione è omogenea
+
+**Svantaggi**:
+- Può non rappresentare adeguatamente sottogruppi importanti se la popolazione è eterogenea
+- Può richiedere campioni di grandi dimensioni per garantire la rappresentatività
+
+## Stratified Random Sampling
+
+Nel campionamento stratificato, la popolazione viene prima divisa in sottogruppi (strati) mutuamente esclusivi e collettivamente esaustivi, e poi viene effettuato un campionamento casuale semplice all'interno di ciascuno strato. Questo metodo:
+
+- Assicura che ogni sottogruppo importante nella popolazione sia rappresentato
+- Migliora la precisione delle stime per sottogruppi specifici
+- Richiede conoscenze preliminari sulle caratteristiche della popolazione
+
+**Vantaggi**:
+- Garantisce rappresentazione di tutti i sottogruppi importanti
+- Può ridurre l'errore di campionamento rispetto al campionamento casuale semplice
+- Permette analisi separate per ciascuno strato
+
+**Svantaggi**:
+- Richiede conoscenza della distribuzione della popolazione in strati
+- Più complesso da implementare
+- Può risultare inefficiente se gli strati sono mal definiti
+
+## Differenze tra i Due Metodi
+
+| Simple Random Sampling | Stratified Random Sampling |
+|------------------------|----------------------------|
+| Ogni unità ha la stessa probabilità di selezione | La probabilità di selezione varia tra strati ma è uniforme all'interno di ogni strato |
+| Non richiede conoscenza preliminare della popolazione | Richiede conoscenza della distribuzione della popolazione in strati |
+| Può non rappresentare bene sottogruppi piccoli | Garantisce rappresentazione di tutti gli strati |
+| Generalmente richiede campioni più grandi | Può essere più efficiente con campioni più piccoli |
+| Implementazione semplice | Implementazione più complessa |
+
+# Implementazione in R
+
+## Preparazione dei Dati
+
+Importiamo le librerie necessarie e carichiamo il dataset Spotify contenente informazioni sulle canzoni.
+
+```{r}
+# Import required libraries
+library(splitstackshape) # contiene funzioni per il campionamento stratificato
+
+# Import data
+df = read.csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-01-21/spotify_songs.csv')
+
+# Convertiamo la durata da millisecondi a secondi
+df$duration_sec = round(df$duration_ms/1000, 0)
+
+# Calcoliamo la media reale (media della popolazione)
+real_mean = round(mean(df$duration_sec), digits=2)
+print(paste("Media reale della durata delle tracce: ", real_mean, "secondi"))
+```
+
+## Simple Random Sampling
+
+Implementiamo il campionamento casuale semplice per stimare la durata media delle tracce Spotify.
+
+```{r}
+# Impostiamo un seed per la riproducibilità dei risultati
+set.seed(1)
+
+# Estraiamo un campione casuale di 100 elementi
+random_sample = sample(df$duration_sec, 100)
+
+# Calcoliamo la media del campione
+random_sample_mean = round(mean(random_sample), digits=2)
+print(paste("Media del campione casuale semplice: ", random_sample_mean, "secondi"))
+
+# Confrontiamo con la media reale
+print(paste("Differenza assoluta tra media del campione e media reale: ", 
+            round(abs(real_mean - random_sample_mean), digits=2), "secondi"))
+```
+
+## Stratified Random Sampling
+
+Implementiamo il campionamento stratificato utilizzando il genere della playlist come strato.
+
+```{r}
+# Visualizziamo i generi delle playlist (strati)
+unique(df$playlist_genre)
+
+# Calcoliamo le medie reali per ogni strato
+real_clusters_means = aggregate(df$duration_sec, list(df$playlist_genre), mean)
+colnames(real_clusters_means) = c("stratus", "Real_Mean")
+
+# Calcoliamo il numero di tracce per ogni strato
+real_clusters_count = aggregate(df$track_id, list(df$playlist_genre), length)
+colnames(real_clusters_count) = c("stratus", "length")
+
+# Uniamo i dataframe e calcoliamo i pesi per ogni strato
+real_clusters_kpi = merge(real_clusters_means, real_clusters_count, by="stratus", x.all=TRUE)
+real_clusters_kpi$weight = real_clusters_kpi$length / nrow(df)
+real_clusters_kpi
+```
+
+Eseguiamo il campionamento stratificato con allocazione proporzionale:
+
+```{r}
+# Prendiamo un campione del 5% da tutti gli strati
+stratified_sample = stratified(df, "playlist_genre", 0.05)
+
+# Verifichiamo il numero di tracce per ogni strato nel campione
+strat_counts = aggregate(stratified_sample$track_id, list(stratified_sample$playlist_genre), length)
+colnames(strat_counts) = c("genere", "conteggio")
+strat_counts
+
+# Calcoliamo le medie per i campioni di ogni strato
+stratified_sample_means = aggregate(stratified_sample$duration_sec, list(stratified_sample$playlist_genre), mean)
+colnames(stratified_sample_means) = c("stratus", "Stratified_Sample_Mean")
+
+# Aggiungiamo le medie reali degli strati
+stratified_sample_means$Real_Mean = real_clusters_means$Real_Mean
+
+# Confrontiamo le medie dei campioni stratificati con le medie reali degli strati
+stratified_sample_means$Abs_Difference = abs(stratified_sample_means$Stratified_Sample_Mean - stratified_sample_means$Real_Mean)
+stratified_sample_means
+```
+
+Calcoliamo la media totale del campione stratificato:
+
+```{r}
+# Uniamo i dataframe per il calcolo
+means = merge(real_clusters_kpi, stratified_sample_means, by="stratus")
+
+# Calcoliamo la media come somma pesata delle medie del campione
+stratified_sample_mean = sum(means$weight * means$Stratified_Sample_Mean) 
+print(paste("Media del campione stratificato: ", round(stratified_sample_mean, 2), "secondi"))
+
+# Confrontiamo con la media reale
+print(paste("Differenza assoluta tra media del campione stratificato e media reale: ", 
+            round(abs(real_mean - stratified_sample_mean), digits=2), "secondi"))
+```
+
+
+# Conclusioni
+
+In questo documento abbiamo esplorato due metodi fondamentali di campionamento:
+
+1. **Simple Random Sampling**: Un metodo semplice e diretto che fornisce buone stime quando la popolazione è relativamente omogenea. Abbiamo visto che aumentando la dimensione del campione, la stima si avvicina sempre più alla media reale.
+
+2. **Stratified Random Sampling**: Un metodo più sofisticato che tiene conto dell'eterogeneità della popolazione attraverso la stratificazione. Questo approccio tende a fornire stime più precise, specialmente quando esistono differenze significative tra i sottogruppi della popolazione.
+
+Abbiamo anche confrontato due strategie di allocazione per il campionamento stratificato:
+- **Allocazione proporzionale**: Mantiene le proporzioni degli strati come nella popolazione originale
+- **Allocazione uniforme**: Seleziona lo stesso numero di elementi da ogni strato
+
+Le tecniche di campionamento sono strumenti essenziali nell'analisi dei dati, permettendo di fare inferenze su grandi popolazioni utilizzando campioni gestibili e rappresentativi.
